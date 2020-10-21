@@ -1,0 +1,484 @@
+{
+	"metadata": {
+		"version": 2
+	},
+	"application": {
+		"name": "simple-go-bb-cloud",
+		"language": "GOLANG",
+		"artifact_store": {
+			"type": "s3",
+			"repositories": [
+				{
+					"category": "rc-packaging",
+					"bucket": "guide-rails-calculi-rc"
+				},
+				{
+					"category": "final-packaging",
+					"bucket": "guide-rails-calculi-final"
+				},
+				{
+					"category": "logs",
+					"bucket": "guide-rails-calculi-logs"
+				}
+			]
+		}
+	},
+	"pipeline": {
+		"segments": [
+			{
+				"name": "Build",
+				"segment_type": "build",
+				"exit_actions": {
+					"default": {
+						"fetch_logs": true,
+						"code_analysis": {
+							"publish": true,
+							"properties": []
+						},
+						"delete_instances": true
+					},
+					"on_success": {
+						"code_analysis": null
+					},
+					"on_failure": {
+						"code_analysis": null
+					},
+					"on_abort": {
+						"code_analysis": null
+					}
+				},
+				"deployment_strategy": {
+					"canary_watch_time": "",
+					"update_watch_time": "",
+					"serial": false
+				},
+				"application_init": {},
+				"packages": [
+					{
+						"name": "((application.name))",
+						"downloads": [],
+						"files": [
+							"((application.name))*"
+						]
+					}
+				],
+				"instance_tags": [
+					{
+						"name": "application.name",
+						"value": "((application.name))"
+					}
+				],
+				"post_deployment_actions": {
+					"instances": null,
+					"loadbalanced": false,
+					"loadbalancer": {
+						"TargetGroupName": "",
+						"TargetGroupPort": 0,
+						"TargetGroupProtocol": "",
+						"TargetType": "",
+						"VPCID": "",
+						"HealthCheckEnabled": false,
+						"HealthCheckPort": "",
+						"UnhealthyThresholdCount": 0
+					}
+				},
+				"cache_info": {},
+				"tasks": [
+					{
+						"name": "simple-go-bb-cloud",
+						"steps": [
+							{
+								"name": "Get Dependencies",
+								"definition": "Get Dependencies",
+								"command": "go get -t -d ./...",
+								"properties": []
+							},
+							{
+								"name": "Unit Tests and Coverage",
+								"definition": "Unit Tests and Coverage",
+								"command": "ginkgo -cover -r -v -skipPackage=pb,test -outputdir=./ | tee ginkgo.output\ncat ginkgo.output 2\u003e\u00261 | go-junit-report \u003e test.xml\ngocov convert *.coverprofile | gocov-xml \u003e coverage.xml",
+								"properties": []
+							},
+							{
+								"name": "Build",
+								"definition": "Build",
+								"command": "go build -o ((application.name))",
+								"properties": []
+							},
+							{
+								"name": "Lint",
+								"definition": "Lint",
+								"command": "set +e; gometalinter ./... --cyclo-over=10 --line-length=120 --deadline=180s --vendored-linters  --checkstyle --skip=test --skip=mock --skip=vendor --exclude=_test.go --exclude=.pb.go \u003e report.xml; set -e",
+								"properties": []
+							},
+							{
+								"name": "GetTools",
+								"definition": "GetTools",
+								"command": "go get github.com/axw/gocov/gocov\ngo get github.com/AlekSi/gocov-xml\ngo get -u github.com/jstemmer/go-junit-report\ncp ${GOPATH}/bin/gocov* ${GOPATH}/bin/go-junit-report .",
+								"properties": []
+							},
+							{
+								"name": "Build Instrumented",
+								"definition": "Build Instrumented",
+								"command": "go test -c -coverpkg=all -covermode=count -o ((application.name))-instrumented",
+								"properties": []
+							}
+						]
+					}
+				]
+			},
+			{
+				"name": "Production",
+				"segment_type": "production",
+				"run_after": [
+					"Build"
+				],
+				"exit_actions": {
+					"default": {
+						"fetch_logs": true,
+						"notifications": [
+							{
+								"type": "slack",
+								"send_notification": true,
+								"to": [
+									"",
+									""
+								]
+							}
+						],
+						"code_analysis": {
+							"properties": null
+						},
+						"delete_instances": false
+					},
+					"on_success": {
+						"notifications": [
+							{
+								"type": "slack",
+								"send_notification": true,
+								"to": [
+									""
+								]
+							}
+						],
+						"code_analysis": {
+							"properties": null
+						},
+						"delete_instances": false
+					},
+					"on_failure": {
+						"notifications": [
+							{
+								"type": "slack",
+								"send_notification": true
+							}
+						],
+						"code_analysis": {
+							"properties": null
+						},
+						"delete_instances": false
+					},
+					"on_abort": {
+						"notifications": [
+							{
+								"type": "slack",
+								"send_notification": true
+							}
+						],
+						"code_analysis": {
+							"properties": null
+						},
+						"delete_instances": false
+					}
+				},
+				"deployment_strategy": {
+					"canaries": 1,
+					"max_in_flight": 1,
+					"canary_watch_time": "5000-30000",
+					"update_watch_time": "5000-30000",
+					"serial": false
+				},
+				"application_init": {},
+				"process": {
+					"init": {}
+				},
+				"package_dependencies": [
+					"((application.name))"
+				],
+				"instance_tags": [
+					{
+						"name": "application.name",
+						"value": "((application.name))"
+					}
+				],
+				"instance_groups": [
+					{
+						"name": "((application.name))",
+						"number_of_instances": 1,
+						"cloud_provider_type": "aws",
+						"vm_type": "default",
+						"os_type": "default",
+						"networks": [
+							"production"
+						],
+						"availability_zones": [
+							"default"
+						],
+						"deployment_strategy": {
+							"canaries": 1,
+							"max_in_flight": 1,
+							"canary_watch_time": "5000-30000",
+							"update_watch_time": "5000-30000",
+							"serial": false
+						},
+						"dependencies": [
+							{
+								"name": "consul",
+								"release": "consul",
+								"provides": [
+									{
+										"name": "consul_servers.as",
+										"value": "consul_1"
+									}
+								],
+								"consumes": [
+									{
+										"name": "consul_servers.from",
+										"value": "consul_1"
+									}
+								],
+								"properties": [
+									{
+										"name": "consul.servicename",
+										"value": "((consul.servicename))"
+									},
+									{
+										"name": "consul.environment",
+										"value": "((consul.environment))"
+									},
+									{
+										"name": "consul.datacenter",
+										"value": "((consul.datacenter))"
+									},
+									{
+										"name": "consul.server",
+										"value": "false"
+									},
+									{
+										"name": "consul.joinservers",
+										"value": "((consul.joinservers))"
+									},
+									{
+										"name": "calculi.intermediate.cert",
+										"value": "grsecret:tls.cert"
+									},
+									{
+										"name": "calculi.intermediate.key",
+										"value": "grsecret:tls.key"
+									}
+								]
+							}
+						]
+					}
+				],
+				"gated": true,
+				"post_deployment_actions": {
+					"instances": null,
+					"loadbalanced": false,
+					"loadbalancer": {
+						"TargetGroupName": "",
+						"TargetGroupPort": 0,
+						"TargetGroupProtocol": "",
+						"TargetType": "",
+						"VPCID": "",
+						"HealthCheckEnabled": false,
+						"HealthCheckPort": "",
+						"UnhealthyThresholdCount": 0
+					}
+				},
+				"cache_info": {}
+			}
+		],
+		"exit_actions": {
+			"default": {
+				"fetch_logs": true,
+				"code_analysis": {
+					"publish": true,
+					"properties": []
+				},
+				"delete_instances": true
+			}
+		},
+		"default_properties": [],
+		"deployment_files": [
+			{
+				"source_path": "ci/bin/start_service.sh",
+				"target_path": "bin/start_service.sh"
+			}
+		],
+		"application_init": {},
+		"process": {
+			"init": {
+				"command": "bin/start_service.sh"
+			}
+		},
+		"releases": [
+			{
+				"name": "consul",
+				"version": "latest"
+			}
+		]
+	},
+	"organization": {
+		"orgname": "GR-Product"
+	},
+	"infrastructure": {
+		"stemcells": null,
+		"resources": [
+			{
+				"name": "pipeline",
+				"image": {
+					"name": "docker-registry.service.consul:443/pipeline-image-cli",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "email",
+				"image": {
+					"name": "docker-registry.service.consul:443/gr-email-resource",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "deployment",
+				"image": {
+					"name": "docker-registry.service.consul:443/pipeline-image-cli",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "idgenerator",
+				"image": {
+					"name": "docker-registry.service.consul:443/gr-id-generator",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "emitter",
+				"image": {
+					"name": "docker-registry.service.consul:443/guide-rails-emitter",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "git-resource",
+				"image": {
+					"name": "docker-registry.service.consul:443/gr-git-resource",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "build-breaker",
+				"image": {
+					"name": "docker-registry.service.consul:443/gr-build-breaker",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "s3",
+				"image": {
+					"name": "docker-registry.service.consul:443/concourse-s3-resource",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "slack",
+				"image": {
+					"name": "docker-registry.service.consul:443/concourse-slack-resource",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "sonar",
+				"image": {
+					"name": "docker-registry.service.consul:443/concourse-sonarqube-resource",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "time",
+				"image": {
+					"name": "docker-registry.service.consul:443/gr-time-resource",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "azure-blobstore",
+				"image": {
+					"name": "docker-registry.service.consul:443/concourse-azure-blobstore-resource",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "gr-gcs-resource",
+				"image": {
+					"name": "docker-registry.service.consul:443/gr-gcs-resource",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			},
+			{
+				"name": "build",
+				"image": {
+					"name": "docker-registry.service.consul:443/pipeline-image-go-tools",
+					"version": "latest",
+					"location": "docker-registry.service.consul:443"
+				}
+			}
+		],
+		"notification_configurations": [
+			{
+				"name": "email",
+				"provider": "email",
+				"properties": [
+					{
+						"name": "gr_email_host",
+						"value": "((gr_email_host))"
+					},
+					{
+						"name": "gr_email_port",
+						"value": "((gr_email_port))"
+					},
+					{
+						"name": "gr_email_from",
+						"value": "((gr_email_from))"
+					},
+					{
+						"name": "gr_email_username",
+						"value": "((gr_email_username))"
+					},
+					{
+						"name": "gr_email_password",
+						"value": "((gr_email_password))"
+					}
+				]
+			}
+		],
+		"vault": {},
+		"concourse": {},
+		"mq": {},
+		"bosh": {}
+	}
+}
