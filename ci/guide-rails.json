@@ -63,6 +63,12 @@
 						"name": "GH-webhook-test",
 						"steps": [
 							{
+								"name": "from ide",
+								"definition": "from ide",
+								"command": "env",
+								"properties": null
+							},
+							{
 								"name": "Get Dependencies",
 								"definition": "Get Dependencies",
 								"command": "go get -t -d ./...",
